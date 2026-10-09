@@ -61,7 +61,21 @@ fn sign(
     to: &Address,
     amount: i128,
 ) -> Signed {
-    let next = sb::pk_hash(seed, n + 1);
+    sign_with_next(env, vault, seed, n, token, to, amount, sb::pk_hash(seed, n + 1))
+}
+
+/// Like [`sign`], but rotating to an arbitrary key hash.
+#[allow(clippy::too_many_arguments)]
+fn sign_with_next(
+    env: &Env,
+    vault: &Address,
+    seed: &sb::Seed,
+    n: u64,
+    token: &Address,
+    to: &Address,
+    amount: i128,
+    next: [u8; 32],
+) -> Signed {
     let message =
         sb::transfer_rotate_message(&strkey(vault), n, &strkey(token), &strkey(to), amount, &next);
     let digest = sb::sep53_hash(message.as_bytes());
@@ -231,6 +245,37 @@ fn zero_amount_rotates() {
     assert_eq!(s.vault.nonce(), 1);
     assert_eq!(s.vault.pk_hash(), t.next);
     assert_eq!(s.token.balance(&s.vault.address), 1_000);
+}
+
+#[test]
+fn used_keys_cannot_return() {
+    let s = setup();
+    let to = Address::generate(&s.env);
+    for n in 0..2 {
+        let t = sign(&s.env, &s.vault.address, &SEED, n, &s.token.address, &to, 1);
+        s.vault.transfer_rotate(&s.token.address, &to, &1, &t.next, &t.pubkey, &t.sig);
+    }
+    let used = |n: u64| s.vault.is_key_used(&BytesN::from_array(&s.env, &sb::pk_hash(&SEED, n)));
+    assert!(used(0) && used(1));
+    assert!(!used(2), "the current key is not revealed yet");
+    assert!(!used(3));
+
+    // Key 2 (current) correctly signs a rotation back to key 0 or 1: still rejected.
+    for old in 0..2 {
+        let t = sign_with_next(
+            &s.env,
+            &s.vault.address,
+            &SEED,
+            2,
+            &s.token.address,
+            &to,
+            1,
+            sb::pk_hash(&SEED, old),
+        );
+        let res = s.vault.try_transfer_rotate(&s.token.address, &to, &1, &t.next, &t.pubkey, &t.sig);
+        assert_eq!(res, Err(Ok(Error::KeyReuse)));
+    }
+    assert_eq!(s.vault.nonce(), 2);
 }
 
 #[test]

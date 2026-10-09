@@ -8,6 +8,7 @@ import {
   createVault,
   deposit,
   formatAmount,
+  isKeyUsed,
   parseAmount,
   tokenInfo,
   transferRotate,
@@ -262,24 +263,23 @@ button("deposit").onclick = () =>
     await refresh(vault, token);
   });
 
-button("set-next").onclick = () => {
-  if (!active) return;
-  const reason =
-    active === store.feePayer
-      ? "That is the fee payer."
-      : active === currentKey()
-        ? "That is the current key. Add a new account in Freighter and select it."
-        : allKeys(store).has(active)
-          ? "That account was already used as a vault key."
-          : undefined;
-  if (reason) {
-    log(`Cannot use ${active} as the next key: ${reason}`);
-    return;
-  }
-  nextKey = active;
-  log(`Next key set to ${active}`);
-  render();
-};
+button("set-next").onclick = () =>
+  run("Set next key", async () => {
+    const key = active!;
+    const reason =
+      key === store.feePayer
+        ? "That is the fee payer."
+        : key === currentKey()
+          ? "That is the current key. Add a new account in Freighter and select it."
+          : allKeys(store).has(key)
+            ? "That account was already used as a vault key."
+            : (await isKeyUsed(loaded!.vault, key))
+              ? "This vault already revealed that key, so it can never be its key again."
+              : undefined;
+    if (reason) throw new Error(`Cannot use ${key} as the next key: ${reason}`);
+    nextKey = key;
+    log(`Next key set to ${key}`);
+  });
 
 button("send").onclick = () =>
   run("Transfer", async () => {

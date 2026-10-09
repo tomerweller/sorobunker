@@ -43,6 +43,19 @@ for (const [n, amount] of [[0, 20n * XLM], [1, 5n * XLM]] as const) {
   if (!state.pkHash.equals(pkHash(vaultKeys[n + 1].publicKey()))) throw new Error("key did not rotate");
 }
 
+// Rotating back to a revealed key is refused, by the app before signing and by the contract.
+const reuse = await transferRotate(signer, {
+  vault,
+  feePayer: feePayer.publicKey(),
+  currentKey: vaultKeys[2].publicKey(),
+  nextKey: vaultKeys[0].publicKey(),
+  token: XLM_SAC,
+  to: recipient.publicKey(),
+  amount: 0n,
+}).then(() => "accepted", (e: Error) => e.message);
+if (!reuse.includes("already used")) throw new Error(`key reuse not refused: ${reuse}`);
+console.log("reuse of key 0 refused:", reuse);
+
 const vaultBal = await balance(XLM_SAC, vault);
 if (vaultBal !== 25n * XLM) throw new Error(`unexpected vault balance ${vaultBal}`);
 console.log("vault balance", vaultBal, "- OK");

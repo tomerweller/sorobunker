@@ -4,7 +4,7 @@ export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const NETWORK_PASSPHRASE = Networks.TESTNET;
 
 /** The SoroBunker wasm uploaded to testnet; "Create vault" instantiates it. */
-export const VAULT_WASM_HASH = "abf622d05530d32df967738ce5139e19f77201f2db8af03c80a9de5fe69846a5";
+export const VAULT_WASM_HASH = "b3608837f2ed9781c4bd96327d9aa4a99ecd864257c647b47277b19b0d0ec2b8";
 
 /** Native XLM's Stellar Asset Contract on testnet. */
 export const XLM_SAC = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";

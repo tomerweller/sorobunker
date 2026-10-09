@@ -23,6 +23,16 @@ export async function vaultState(vault: string): Promise<VaultState> {
   }
 }
 
+/** Whether the vault has already revealed `key`; undefined if the vault predates the registry. */
+export async function isKeyUsed(vault: string, key: string): Promise<boolean | undefined> {
+  try {
+    return await read<boolean>(vault, "is_key_used", bytes(pkHash(key)));
+  } catch (e) {
+    if (e instanceof SimulationError) return undefined;
+    throw e;
+  }
+}
+
 export interface TokenInfo {
   symbol: string;
   decimals: number;
@@ -81,6 +91,9 @@ export async function transferRotate(signer: Signer, p: TransferParams, step: St
   if (!pkHash(p.currentKey).equals(stored)) {
     throw new Error(`${p.currentKey} is not the vault's current key.`);
   }
+  if (await isKeyUsed(p.vault, p.nextKey)) {
+    throw new Error("The next key was already used by this vault and can never be its key again.");
+  }
   // Catch what would fail before asking the key to sign: a signature for a transfer that
   // can't succeed still goes to the RPC server during simulation.
   if (p.amount > (await balance(p.token, p.vault))) {
@@ -115,7 +128,7 @@ export async function transferRotate(signer: Signer, p: TransferParams, step: St
   const tx = await prepare(p.feePayer, op).catch((e) => {
     if (e instanceof SimulationError && e.contract === p.vault) {
       if (e.code === 1) throw new Error("The key is not the vault's current key (WrongPublicKey).");
-      if (e.code === 2) throw new Error("The next key is the current key (KeyReuse).");
+      if (e.code === 2) throw new Error("The next key is the current key or was already used (KeyReuse).");
     }
     throw e;
   });

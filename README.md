@@ -15,7 +15,8 @@ A minimal vault for [Soroban](https://developers.stellar.org/docs/build/smart-co
   reveals the public key. The contract checks the key against the stored hash and verifies
   the signature.
 - Every transfer also commits to the **hash of the next key**, so each key is revealed and
-  used exactly once.
+  used exactly once. The vault records every key it has revealed and refuses to rotate back
+  to one.
 - Anyone can submit a signed transfer and pay its fees; they cannot change the recipient,
   amount, token or next key, which are all signed. The contract does not use the Stellar
   auth framework.
@@ -84,13 +85,20 @@ fn transfer_rotate(env, token: Address, to: Address, amount: i128, next_pk_hash:
 fn extend_ttl(env);          // anyone may keep the vault alive
 fn pk_hash(env) -> BytesN<32>;
 fn nonce(env) -> u64;
+fn is_key_used(env, pk_hash: BytesN<32>) -> bool;  // already revealed by this vault?
 ```
 
 - **Deposit** by sending any SEP-41 token (or Stellar Asset Contract) to the vault's address.
 - **`transfer_rotate`** checks `sha256(pubkey) == pk_hash`, verifies `sig` over the message
-  below, stores `next_pk_hash`, increments the nonce, then calls the token's `transfer`,
-  which validates the amount. To rotate without moving funds, transfer 0 XLM.
-- **Errors:** `WrongPublicKey = 1`, `KeyReuse = 2`. An invalid signature traps in the host's
+  below, marks the current key as used, stores `next_pk_hash`, increments the nonce, then
+  calls the token's `transfer`, which validates the amount. To rotate without moving funds,
+  transfer 0 XLM.
+- **Used-key registry:** each revealed key hash is kept in persistent storage, and
+  `next_pk_hash` is rejected if it is the current key or any key the vault has revealed. The
+  web app checks `is_key_used` before choosing a next key, so this holds even if the browser
+  forgets which keys it used. The registry is per vault.
+- **Errors:** `WrongPublicKey = 1`, `KeyReuse = 2` (the next key is the current key or was
+  already used). An invalid signature traps in the host's
   `ed25519_verify` rather than returning a contract error.
 - **Event:** every successful call emits `transfer_rotate` with topics `(token, to)` and data
   `{nonce, amount, next_pk_hash}`.
@@ -167,7 +175,7 @@ page, it answers Freighter's message protocol with real testnet keys, logs what 
 the wallet to sign, and can simulate declines, a wrong network or a misbehaving wallet. See
 the comment at the top of the file for how to inject and drive it.
 
-A transfer costs about 1.2M CPU instructions and about 0.002 XLM in fees on testnet.
+A transfer costs about 1.3M CPU instructions and about 0.002 XLM in fees on testnet.
 
 ## Operational rules
 

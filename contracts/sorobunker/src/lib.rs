@@ -26,6 +26,8 @@ const TTL_EXTEND_TO: u32 = 120 * DAY_IN_LEDGERS;
 enum DataKey {
     PkHash,
     Nonce,
+    /// Present for every key hash this vault has revealed (persistent storage).
+    Used(BytesN<32>),
 }
 
 /// An invalid ed25519 signature is not listed here: `ed25519_verify` traps the call.
@@ -34,6 +36,7 @@ enum DataKey {
 #[repr(u32)]
 pub enum Error {
     WrongPublicKey = 1,
+    /// The next key is the current key, or one this vault has already revealed.
     KeyReuse = 2,
 }
 
@@ -73,7 +76,7 @@ impl SoroBunker {
         sig: BytesN<64>,
     ) -> Result<(), Error> {
         let pk_hash = Self::pk_hash(env.clone());
-        if next_pk_hash == pk_hash {
+        if next_pk_hash == pk_hash || Self::is_key_used(env.clone(), next_pk_hash.clone()) {
             return Err(Error::KeyReuse);
         }
         if BytesN::<32>::from(env.crypto().sha256(&pubkey.clone().into())) != pk_hash {
@@ -95,7 +98,11 @@ impl SoroBunker {
         let digest = env.crypto().sha256(&signed);
         env.crypto().ed25519_verify(&pubkey, &digest.into(), &sig);
 
-        // Effects before the external token call.
+        // Effects before the external token call. The current key is now public, so it
+        // can never be rotated back to.
+        let used = DataKey::Used(pk_hash);
+        env.storage().persistent().set(&used, &());
+        env.storage().persistent().extend_ttl(&used, TTL_THRESHOLD, TTL_EXTEND_TO);
         env.storage().instance().set(&DataKey::Nonce, &(nonce + 1));
         env.storage().instance().set(&DataKey::PkHash, &next_pk_hash);
         extend_instance_ttl(&env);
@@ -122,6 +129,12 @@ impl SoroBunker {
 
     pub fn nonce(env: Env) -> u64 {
         env.storage().instance().get(&DataKey::Nonce).unwrap()
+    }
+
+    /// Whether this vault has already revealed the key with this hash. Such a key can never
+    /// become the vault's key again.
+    pub fn is_key_used(env: Env, pk_hash: BytesN<32>) -> bool {
+        env.storage().persistent().has(&DataKey::Used(pk_hash))
     }
 }
 

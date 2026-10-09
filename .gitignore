@@ -2,5 +2,6 @@
 **/test_snapshots
 web/node_modules
 web/dist
-.claude/
+.claude/*
+!.claude/skills/
 .DS_Store

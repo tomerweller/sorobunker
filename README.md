@@ -3,7 +3,7 @@
 A minimal vault for [Soroban](https://developers.stellar.org/docs/build/smart-contracts/overview)
 (Stellar smart contracts) that keeps its key hidden until it is used, then replaces it.
 
-**Live demo (testnet):** https://tomerweller.com/sorobunker/
+Live demo on testnet: https://tomerweller.com/sorobunker/
 
 > [!WARNING]
 > Experimental and unaudited. Testnet only. Do not use with real funds.
@@ -14,7 +14,7 @@ A minimal vault for [Soroban](https://developers.stellar.org/docs/build/smart-co
 - To transfer, the key holder signs a human-readable message describing the transfer and
   reveals the public key. The contract checks the key against the stored hash and verifies
   the signature.
-- Every transfer also commits to the **hash of the next key**, so each key is revealed and
+- Every transfer also commits to the hash of the next key, so each key is revealed and
   used exactly once. The vault records every key it has revealed and refuses to rotate back
   to one.
 - Anyone can submit a signed transfer and pay its fees; they cannot change the recipient,
@@ -27,7 +27,7 @@ While a key is unused, the only thing on-chain is its hash, which a quantum comp
 reverse (SHA-256 keeps about 128-bit security against Grover's algorithm). That protects a
 vault that sits idle from a future attacker who can break elliptic-curve keys.
 
-It is **not** fully post-quantum: once a transfer is broadcast, its public key is exposed
+It is not fully post-quantum: once a transfer is broadcast, its public key is exposed
 until the transaction lands and the key rotates. An attacker who could derive the secret key
 within that window (about one ledger) could sign a different transfer. See
 [Operational rules](#operational-rules). Hash-based one-time signatures such as Lamport
@@ -49,17 +49,17 @@ It keeps three kinds of account apart:
 
 | Role | What it does | Account |
 |---|---|---|
-| **Fee payer** | Signs and pays for transactions | Any funded account. Never a vault key. |
-| **Current vault key** | Signs the transfer message ([SEP-53](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md)) | The Freighter account whose public key hashes to the vault's stored hash |
-| **Next vault key** | Nothing yet; only its hash goes on-chain | A new, never-funded Freighter account |
+| Fee payer | Signs and pays for transactions | Any funded account. Never a vault key. |
+| Current vault key | Signs the transfer message ([SEP-53](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md)) | The Freighter account whose public key hashes to the vault's stored hash |
+| Next vault key | Nothing yet; only its hash goes on-chain | A new, never-funded Freighter account |
 
 To use it, set Freighter to **Testnet**, then:
 
-1. **Connect** Freighter, select a funded account and make it the fee payer.
-2. **Create a vault:** add a new account in Freighter (name it e.g. *SoroBunker key 1 — do not
-   fund*), select it and click *Create vault*.
-3. **Deposit** some XLM from the fee payer.
-4. **Send:** enter the recipient and amount. When asked for the next key, add another new
+1. Connect Freighter, select a funded account and make it the fee payer.
+2. Add a new account in Freighter (name it e.g. *SoroBunker key 1 (do not fund)*), select it
+   and click *Create vault*.
+3. Deposit some XLM from the fee payer.
+4. To send, enter the recipient and amount. When asked for the next key, add another new
    account in Freighter and select it; the app checks it and offers to use it. Review the
    message, then click *Sign with key #n*. Freighter asks the current key to sign the message,
    then the fee payer to sign the transaction.
@@ -91,19 +91,19 @@ fn nonce(env) -> u64;
 fn is_key_used(env, pk_hash: BytesN<32>) -> bool;  // already revealed by this vault?
 ```
 
-- **Deposit** by sending any SEP-41 token (or Stellar Asset Contract) to the vault's address.
-- **`transfer_rotate`** checks `sha256(pubkey) == pk_hash`, verifies `sig` over the message
+- Deposit by sending any SEP-41 token (or Stellar Asset Contract) to the vault's address.
+- `transfer_rotate` checks `sha256(pubkey) == pk_hash`, verifies `sig` over the message
   below, marks the current key as used, stores `next_pk_hash`, increments the nonce, then
   calls the token's `transfer`, which validates the amount. To rotate without moving funds,
   transfer 0 XLM.
-- **Used-key registry:** each revealed key hash is kept in persistent storage, and
+- The vault keeps each revealed key hash in persistent storage (the used-key registry), and
   `next_pk_hash` is rejected if it is the current key or any key the vault has revealed. The
   web app checks `is_key_used` before choosing a next key, so this holds even if the browser
   forgets which keys it used. The registry is per vault.
-- **Errors:** `WrongPublicKey = 1`, `KeyReuse = 2` (the next key is the current key or was
-  already used). An invalid signature traps in the host's
-  `ed25519_verify` rather than returning a contract error.
-- **Event:** every successful call emits `transfer_rotate` with topics `(token, to)` and data
+- The error codes are `WrongPublicKey = 1` and `KeyReuse = 2` (the next key is the current
+  key or was already used). An invalid signature traps in the host's `ed25519_verify`
+  instead of returning a contract error.
+- Every successful call emits `transfer_rotate` with topics `(token, to)` and data
   `{nonce, amount, next_pk_hash}`.
 
 ### Signed message
@@ -182,7 +182,7 @@ A transfer costs about 1.3M CPU instructions and about 0.002 XLM in fees on test
 
 ## Operational rules
 
-1. **Simulate before submitting.** A failed transaction still publishes the public key
+1. Simulate before submitting. A failed transaction still publishes the public key
    without rotating it. If that happens, rotate right away with a zero-amount transfer.
 2. A broadcast transaction exposes its public key until it lands; one that is delayed or
    censored stays exposed for longer.

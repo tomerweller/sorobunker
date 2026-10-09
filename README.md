@@ -162,6 +162,11 @@ npm test                 # message format and SEP-53 checks
 npm run e2e              # full flow on testnet, with in-memory keys in place of Freighter
 ```
 
+`web/qa/fake-freighter.js` stands in for the Freighter extension during QA: injected into the
+page, it answers Freighter's message protocol with real testnet keys, logs what the app asks
+the wallet to sign, and can simulate declines, a wrong network or a misbehaving wallet. See
+the comment at the top of the file for how to inject and drive it.
+
 A transfer costs about 1.2M CPU instructions and about 0.002 XLM in fees on testnet.
 
 ## Operational rules

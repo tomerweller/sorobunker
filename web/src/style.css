@@ -169,6 +169,16 @@ pre {
   white-space: pre-wrap;
 }
 
+pre.hint-text {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+#amount-note:empty {
+  display: none;
+}
+
 #log:empty::before {
   content: "Nothing yet.";
   color: var(--muted);

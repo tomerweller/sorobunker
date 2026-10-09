@@ -15,17 +15,28 @@ import {
   type TokenInfo,
   type VaultState,
 } from "./vault";
-import { freighterSigner, type Signer } from "./wallet";
+import { connectFreighter, freighterAllowed, type Signer } from "./wallet";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const input = (id: string) => $<HTMLInputElement>(id);
 const button = (id: string) => $<HTMLButtonElement>(id);
 
+/**
+ * Everything read about the loaded vault, replaced only as a whole after a successful read,
+ * so the screen never mixes one vault's (or token's) data with another's address.
+ */
+interface Loaded {
+  vault: string;
+  state: VaultState;
+  token: string;
+  info: TokenInfo;
+  balance: bigint;
+}
+
 const store = load();
 let signer: Signer | undefined;
 let active: string | undefined;
-let state: VaultState | undefined;
-let token: TokenInfo | undefined;
+let loaded: Loaded | undefined;
 let nextKey: string | undefined;
 let busy = false;
 
@@ -74,8 +85,7 @@ function errorText(e: unknown): string {
 
 // ---- rendering -------------------------------------------------------------------------
 
-const vault = () => store.vault;
-const currentKey = () => (vault() ? vaultKeys(store, vault()!).currentKey : undefined);
+const currentKey = () => (loaded ? vaultKeys(store, loaded.vault).currentKey : undefined);
 
 function render() {
   $("active").textContent = active ?? "not connected";
@@ -85,12 +95,14 @@ function render() {
   button("set-fee-payer").disabled = !active || busy;
   button("create").disabled = !active || !store.feePayer || busy;
   button("load").disabled = busy;
-  button("deposit").disabled = !state || !store.feePayer || !signer || busy;
+  button("deposit").disabled = !loaded || !store.feePayer || !signer || busy;
 
-  $("vault-info").hidden = !state;
-  if (state && vault()) {
+  $("vault-info").hidden = !loaded;
+  if (loaded) {
+    const { state, info } = loaded;
     $("nonce").textContent = state.nonce.toString();
     $("pk-hash").textContent = state.pkHash.toString("hex");
+    $("balance").textContent = `${formatAmount(loaded.balance, info.decimals)} ${info.symbol}`;
     const key = currentKey();
     const matches = key ? pkHash(key).equals(state.pkHash) : false;
     $("current-key").textContent = key ?? "unknown";
@@ -99,65 +111,87 @@ function render() {
     status.className = matches ? "ok" : "bad";
     button("set-current").hidden = matches;
     button("set-current").disabled = !active || busy;
+    // Key n signs at nonce n-1, so the next key is number nonce + 2.
+    $("next-name").textContent = `SoroBunker key ${state.nonce + 2n} — do not fund`;
   }
 
-  button("set-next").disabled = !active || !state || busy;
+  button("set-next").disabled = !active || !loaded || busy;
   $("next-key").textContent = nextKey ?? "not set";
-  const message = previewMessage();
-  $("message").textContent = message ?? "Load a vault, set the next key and fill in the transfer.";
-  button("send").disabled =
-    !message || !signer || !store.feePayer || !currentKey() || busy;
+  const preview = previewMessage();
+  $("message").textContent = preview.message ?? preview.hint;
+  $("message").classList.toggle("hint-text", !preview.message);
+  $("amount-note").textContent = preview.amountNote ?? "";
+  button("send").disabled = !preview.message || !signer || !store.feePayer || busy;
 }
 
-function transferInputs() {
-  const t = input("token").value.trim();
-  const to = input("to").value.trim();
-  const valid = (a: string) => StrKey.isValidEd25519PublicKey(a) || StrKey.isValidContract(a);
-  if (!valid(t) || !valid(to) || !token) return undefined;
-  try {
-    return { token: t, to, amount: parseAmount(input("amount").value || "0", token.decimals) };
-  } catch {
-    return undefined;
+/** The message to sign, or what is still missing. */
+function previewMessage(): { message?: string; hint: string; amountNote?: string } {
+  if (!loaded) return { hint: "Load or create a vault first." };
+  if (!currentKey() || !pkHash(currentKey()!).equals(loaded.state.pkHash)) {
+    return { hint: "Set the vault's current key (see Vault above)." };
   }
+  if (input("token").value.trim() !== loaded.token) return { hint: "Loading the token…" };
+  const to = input("to").value.trim();
+  if (!to) return { hint: "Enter the recipient." };
+  if (!StrKey.isValidEd25519PublicKey(to) && !StrKey.isValidContract(to)) {
+    return { hint: "The recipient must be a G… account or C… contract address." };
+  }
+  if (to === currentKey() || to === nextKey) {
+    return { hint: "Never send funds to a vault key: that puts it on-chain." };
+  }
+  let amount: bigint;
+  try {
+    amount = parseAmount(input("amount").value || "0", loaded.info.decimals);
+  } catch (e) {
+    return { hint: errorText(e) };
+  }
+  if (amount > loaded.balance) return { hint: "The vault does not hold that much." };
+  if (!nextKey) return { hint: "Set the next key (steps above)." };
+  const message = transferRotateMessage({
+    vault: loaded.vault,
+    nonce: loaded.state.nonce,
+    token: loaded.token,
+    to,
+    amount,
+    nextPkHash: pkHash(nextKey),
+  });
+  const { decimals, symbol } = loaded.info;
+  const amountNote = `amount ${amount} = ${formatAmount(amount, decimals)} ${symbol} (${decimals} decimal places)`;
+  return { message, hint: "", amountNote };
 }
 
-function previewMessage(): string | undefined {
-  const t = transferInputs();
-  if (!t || !state || !vault() || !nextKey) return undefined;
-  return transferRotateMessage({ vault: vault()!, nonce: state.nonce, ...t, nextPkHash: pkHash(nextKey) });
-}
-
-async function refreshVault() {
-  const v = vault();
-  if (!v) return;
-  const t = input("token").value.trim();
-  [state, token] = await Promise.all([vaultState(v), tokenInfo(t)]);
-  const bal = await balance(t, v);
-  $("balance").textContent = `${formatAmount(bal, token.decimals)} ${token.symbol}`;
+/** Read a vault and token; only replaces what is shown once every read has succeeded. */
+async function refresh(vault: string, token: string) {
+  const state = await vaultState(vault);
+  const info = await tokenInfo(token);
+  loaded = { vault, state, token, info, balance: await balance(token, vault) };
   render();
 }
 
 // ---- actions ---------------------------------------------------------------------------
 
-button("connect").onclick = () =>
-  run("Connect", async () => {
-    signer = await freighterSigner();
-    active = await signer.activeAddress();
-    log(`Connected. Active account ${active}`);
-    // Freighter has no change event through the kit, so poll the active account.
-    setInterval(async () => {
-      if (busy || !signer) return;
-      try {
-        const a = await signer.activeAddress();
-        if (a !== active) {
-          active = a;
-          render();
-        }
-      } catch {
-        // Wallet locked or on another network; keep the last known account.
+async function connect() {
+  // Only keep the signer once connecting fully succeeded, so a failure can be retried.
+  const s = await connectFreighter();
+  active = await s.activeAddress();
+  signer = s;
+  log(`Connected. Active account ${active}`);
+  // Freighter has no change event through the kit, so poll the active account.
+  setInterval(async () => {
+    if (busy || !signer) return;
+    try {
+      const a = await signer.activeAddress();
+      if (a !== active) {
+        active = a;
+        render();
       }
-    }, 1500);
-  });
+    } catch {
+      // Wallet locked or on another network; keep the last known account.
+    }
+  }, 1500);
+}
+
+button("connect").onclick = () => run("Connect", connect);
 
 button("set-fee-payer").onclick = () => {
   if (!active) return;
@@ -171,16 +205,21 @@ button("set-fee-payer").onclick = () => {
   render();
 };
 
-button("load").onclick = () =>
+const loadVault = () =>
   run("Load vault", async () => {
     const v = input("vault").value.trim();
     if (!StrKey.isValidContract(v)) throw new Error("Enter a vault contract address (C…).");
+    if (v !== loaded?.vault) {
+      loaded = undefined;
+      nextKey = undefined;
+      render();
+    }
+    await refresh(v, input("token").value.trim());
     store.vault = v;
     save(store);
-    nextKey = undefined;
-    await refreshVault();
     log(`Loaded vault ${v}`, { href: EXPLORER_CONTRACT + v, label: "explorer" });
   });
+button("load").onclick = loadVault;
 
 button("create").onclick = () =>
   run("Create vault", async () => {
@@ -189,21 +228,23 @@ button("create").onclick = () =>
     if (allKeys(store).has(firstKey)) throw new Error("That account was already used as a vault key.");
     log(`Creating a vault with first key ${firstKey}…`);
     const { hash, vault: v } = await createVault(signer!, store.feePayer!, firstKey);
-    store.vault = v;
     vaultKeys(store, v).currentKey = firstKey;
+    store.vault = v;
     save(store);
     input("vault").value = v;
+    loaded = undefined;
+    nextKey = undefined;
     log(`Created vault ${v}`, { href: EXPLORER_TX + hash, label: "transaction" });
-    await refreshVault();
+    await refresh(v, input("token").value.trim());
   });
 
 button("set-current").onclick = () => {
-  if (!active || !state || !vault()) return;
-  if (!pkHash(active).equals(state.pkHash)) {
+  if (!active || !loaded) return;
+  if (!pkHash(active).equals(loaded.state.pkHash)) {
     log(`${active} is not the vault's current key: its hash does not match.`);
     return;
   }
-  vaultKeys(store, vault()!).currentKey = active;
+  vaultKeys(store, loaded.vault).currentKey = active;
   save(store);
   log(`Current key set to ${active}`);
   render();
@@ -211,14 +252,14 @@ button("set-current").onclick = () => {
 
 button("deposit").onclick = () =>
   run("Deposit", async () => {
-    const amount = parseAmount(input("deposit-amount").value, token!.decimals);
-    const t = input("token").value.trim();
-    const { hash } = await deposit(signer!, store.feePayer!, vault()!, t, amount);
-    log(`Deposited ${formatAmount(amount, token!.decimals)} ${token!.symbol}`, {
+    const { vault, token, info } = loaded!;
+    const amount = parseAmount(input("deposit-amount").value, info.decimals);
+    const { hash } = await deposit(signer!, store.feePayer!, vault, token, amount);
+    log(`Deposited ${formatAmount(amount, info.decimals)} ${info.symbol}`, {
       href: EXPLORER_TX + hash,
       label: "transaction",
     });
-    await refreshVault();
+    await refresh(vault, token);
   });
 
 button("set-next").onclick = () => {
@@ -242,23 +283,45 @@ button("set-next").onclick = () => {
 
 button("send").onclick = () =>
   run("Transfer", async () => {
-    const t = transferInputs()!;
-    const v = vault()!;
-    const keys = vaultKeys(store, v);
-    await transferRotate(
+    const { vault, token, info } = loaded!;
+    const keys = vaultKeys(store, vault);
+    const { hash } = await transferRotate(
       signer!,
-      { vault: v, feePayer: store.feePayer!, currentKey: keys.currentKey!, nextKey: nextKey!, ...t },
+      {
+        vault,
+        feePayer: store.feePayer!,
+        currentKey: keys.currentKey!,
+        nextKey: nextKey!,
+        token,
+        to: input("to").value.trim(),
+        amount: parseAmount(input("amount").value || "0", info.decimals),
+      },
       (text) => log(text),
-    ).then(({ hash }) => log("Transfer confirmed.", { href: EXPLORER_TX + hash, label: "transaction" }));
+    );
+    log("Transfer confirmed.", { href: EXPLORER_TX + hash, label: "transaction" });
     keys.usedKeys.push(keys.currentKey!);
     keys.currentKey = nextKey;
     nextKey = undefined;
     save(store);
-    await refreshVault();
+    await refresh(vault, token);
   });
 
 for (const id of ["token", "to", "amount"]) input(id).oninput = () => render();
-input("token").onchange = () => run("Load token", refreshVault);
+input("token").onchange = () =>
+  run("Load token", async () => {
+    const t = input("token").value.trim();
+    if (!loaded || t === loaded.token) return;
+    try {
+      await refresh(loaded.vault, t);
+    } catch (e) {
+      input("token").value = loaded.token; // keep the field in step with what is shown
+      throw e;
+    }
+  });
 
 render();
-if (store.vault) button("load").click();
+(async () => {
+  if (store.vault) await loadVault();
+  // Reconnect without a prompt if Freighter already allows this site.
+  if ((await freighterAllowed()) && !signer) await run("Connect", connect);
+})();

@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
 import { Address, StrKey } from "@stellar/stellar-sdk";
 import { VAULT_WASM_HASH } from "./config";
-import { addr, bytes, createContract, i128, invoke, prepare, read, signAndSubmit } from "./chain";
+import { addr, bytes, createContract, i128, invoke, prepare, read, signAndSubmit, SimulationError } from "./chain";
 import { pkHash, transferRotateMessage, verifyMessage } from "./message";
 import type { Signer } from "./wallet";
 
@@ -11,11 +11,16 @@ export interface VaultState {
 }
 
 export async function vaultState(vault: string): Promise<VaultState> {
-  const [nonce, hash] = await Promise.all([
-    read<bigint>(vault, "nonce"),
-    read<Buffer>(vault, "pk_hash"),
-  ]);
-  return { nonce: BigInt(nonce), pkHash: Buffer.from(hash) };
+  try {
+    const [nonce, hash] = await Promise.all([
+      read<bigint>(vault, "nonce"),
+      read<Buffer>(vault, "pk_hash"),
+    ]);
+    return { nonce: BigInt(nonce), pkHash: Buffer.from(hash) };
+  } catch (e) {
+    if (e instanceof SimulationError) throw new Error(`${vault} is not a SoroBunker vault.`);
+    throw e;
+  }
 }
 
 export interface TokenInfo {
@@ -27,7 +32,10 @@ export async function tokenInfo(token: string): Promise<TokenInfo> {
   const [symbol, decimals] = await Promise.all([
     read<string>(token, "symbol"),
     read<number>(token, "decimals"),
-  ]);
+  ]).catch((e) => {
+    if (e instanceof SimulationError) throw new Error(`${token} is not a token contract.`);
+    throw e;
+  });
   // The native asset's contract reports its symbol as "native".
   return { symbol: symbol === "native" ? "XLM" : symbol, decimals: Number(decimals) };
 }
@@ -46,6 +54,7 @@ export async function createVault(signer: Signer, feePayer: string, firstKey: st
 
 /** Move `amount` of `token` from the fee payer's account into the vault. */
 export async function deposit(signer: Signer, feePayer: string, vault: string, token: string, amount: bigint) {
+  if (amount <= 0n) throw new Error("Enter an amount greater than zero.");
   const op = invoke(token, "transfer", addr(feePayer), addr(vault), i128(amount));
   return signAndSubmit(signer, feePayer, await prepare(feePayer, op));
 }
@@ -71,6 +80,11 @@ export async function transferRotate(signer: Signer, p: TransferParams, step: St
   const { nonce, pkHash: stored } = await vaultState(p.vault);
   if (!pkHash(p.currentKey).equals(stored)) {
     throw new Error(`${p.currentKey} is not the vault's current key.`);
+  }
+  // Catch what would fail before asking the key to sign: a signature for a transfer that
+  // can't succeed still goes to the RPC server during simulation.
+  if (p.amount > (await balance(p.token, p.vault))) {
+    throw new Error("The vault does not hold that much of this token.");
   }
 
   const message = transferRotateMessage({
@@ -98,12 +112,16 @@ export async function transferRotate(signer: Signer, p: TransferParams, step: St
     bytes(StrKey.decodeEd25519PublicKey(p.currentKey)),
     bytes(sig),
   );
-  const tx = await prepare(p.feePayer, op);
+  const tx = await prepare(p.feePayer, op).catch((e) => {
+    if (e instanceof SimulationError && e.contract === p.vault) {
+      if (e.code === 1) throw new Error("The key is not the vault's current key (WrongPublicKey).");
+      if (e.code === 2) throw new Error("The next key is the current key (KeyReuse).");
+    }
+    throw e;
+  });
 
   step("Simulation passed. Waiting for the fee payer to sign the transaction…");
-  const res = await signAndSubmit(signer, p.feePayer, tx);
-  step(`Confirmed: ${res.hash}`);
-  return res;
+  return signAndSubmit(signer, p.feePayer, tx);
 }
 
 /** The three keys must stay separate, and funds must never go to an unexposed key. */

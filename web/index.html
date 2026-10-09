@@ -67,7 +67,7 @@
 
         <h3>Next key</h3>
         <ol class="hint">
-          <li>In Freighter, add a new account. Name it something like <em>SoroBunker key 2 — do not fund</em>.</li>
+          <li>In Freighter, add a new account. Name it something like <em id="next-name">SoroBunker key 2 — do not fund</em>.</li>
           <li>Keep it selected, then click the button below.</li>
           <li>Never fund this account or share its address. Only its hash goes on-chain.</li>
         </ol>
@@ -78,7 +78,8 @@
         </dl>
 
         <h3>Message the current key will sign</h3>
-        <pre id="message" class="mono">Load a vault and fill in the transfer.</pre>
+        <pre id="message" class="mono"></pre>
+        <p id="amount-note" class="hint"></p>
         <button id="send" class="primary" disabled>Sign and send</button>
       </section>
 

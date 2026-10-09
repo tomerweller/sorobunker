@@ -16,8 +16,11 @@ export interface Signer {
   signTransaction(xdr: string, address: string): Promise<string>;
 }
 
-/** Freighter, through Stellar Wallets Kit. Loaded lazily so Node scripts never import it. */
-export async function freighterSigner(): Promise<Signer> {
+/**
+ * Connect to Freighter, through Stellar Wallets Kit: asks for access once, and checks the
+ * network. Loaded lazily so Node scripts never import the kit.
+ */
+export async function connectFreighter(): Promise<Signer> {
   const { StellarWalletsKit } = await import("@creit.tech/stellar-wallets-kit");
   const { FreighterModule, FREIGHTER_ID } = await import(
     "@creit.tech/stellar-wallets-kit/modules/freighter"
@@ -29,13 +32,14 @@ export async function freighterSigner(): Promise<Signer> {
     network: Networks.TESTNET,
   });
 
-  return {
+  const signer: Signer = {
     async activeAddress() {
       const { networkPassphrase } = await StellarWalletsKit.getNetwork();
       if (networkPassphrase !== NETWORK_PASSPHRASE) {
         throw new Error("Switch Freighter to Testnet.");
       }
-      return (await StellarWalletsKit.fetchAddress()).address;
+      // Access was granted on connect; don't ask again (the kit's fetchAddress would).
+      return (await StellarWalletsKit.selectedModule.getAddress({ skipRequestAccess: true })).address;
     },
     async signMessage(message, address) {
       const { signedMessage, signerAddress } = await StellarWalletsKit.signMessage(message, {
@@ -48,13 +52,31 @@ export async function freighterSigner(): Promise<Signer> {
       return decodeSignature(signedMessage);
     },
     async signTransaction(xdr, address) {
-      const { signedTxXdr } = await StellarWalletsKit.signTransaction(xdr, {
+      const { signedTxXdr, signerAddress } = await StellarWalletsKit.signTransaction(xdr, {
         address,
         networkPassphrase: NETWORK_PASSPHRASE,
       });
+      if (signerAddress && signerAddress !== address) {
+        throw new Error(`Freighter signed with ${signerAddress}, not ${address}. Select ${address} in Freighter and try again.`);
+      }
       return signedTxXdr;
     },
   };
+
+  await StellarWalletsKit.fetchAddress(); // asks for access if needed
+  await signer.activeAddress(); // checks the network
+  return signer;
+}
+
+/** Whether Freighter is installed and already allows this site (so connecting won't prompt). */
+export async function freighterAllowed(): Promise<boolean> {
+  try {
+    const api = await import("@stellar/freighter-api");
+    if (!(await api.isConnected()).isConnected) return false;
+    return (await api.isAllowed()).isAllowed;
+  } catch {
+    return false;
+  }
 }
 
 /** Freighter returns base64; accept hex too in case a wallet version differs. */

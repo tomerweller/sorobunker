@@ -4,6 +4,7 @@ import {
   Address,
   BASE_FEE,
   Contract,
+  Keypair,
   nativeToScVal,
   Operation,
   rpc,
@@ -34,7 +35,7 @@ export async function read<T>(contractId: string, method: string, ...args: xdr.S
     .setTimeout(30)
     .build();
   const sim = await server.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) throw new Error(simulationError(sim.error));
+  if (rpc.Api.isSimulationError(sim)) throw simulationError(sim.error);
   return scValToNative(sim.result!.retval) as T;
 }
 
@@ -49,7 +50,7 @@ export async function prepare(source: string, op: xdr.Operation): Promise<Transa
     .setTimeout(120)
     .build();
   const sim = await server.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) throw new Error(simulationError(sim.error));
+  if (rpc.Api.isSimulationError(sim)) throw simulationError(sim.error);
   return rpc.assembleTransaction(tx, sim).build();
 }
 
@@ -63,9 +64,14 @@ export async function signAndSubmit(
     await signer.signTransaction(tx.toXDR(), source),
     NETWORK_PASSPHRASE,
   );
+  // Don't submit what the network will reject anyway: the source must have signed.
+  const kp = Keypair.fromPublicKey(source);
+  if (!signed.signatures.some((s) => kp.verify(signed.hash(), s.signature))) {
+    throw new Error(`The wallet did not sign with ${source}. Select it in Freighter and try again.`);
+  }
   const sent = await server.sendTransaction(signed);
   if (sent.status === "ERROR") {
-    throw new Error(`Submission rejected: ${sent.errorResult?.toXDR("base64") ?? "unknown error"}`);
+    throw new Error(`Submission rejected (${sent.errorResult?.result.type ?? "unknown error"}).`);
   }
   const res = await server.pollTransaction(sent.hash, { attempts: 30 });
   if (res.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
@@ -85,14 +91,37 @@ export const createContract = (deployer: string, wasmHash: string, args: xdr.ScV
     constructorArgs: args,
   });
 
-/** Turn host errors into something readable; the vault's own errors are named. */
-function simulationError(error: string): string {
-  const vaultErrors: Record<string, string> = {
-    "Error(Contract, #1)": "the key is not the vault's current key (WrongPublicKey)",
-    "Error(Contract, #2)": "the next key is the current key (KeyReuse)",
-  };
-  for (const [code, text] of Object.entries(vaultErrors)) {
-    if (error.includes(code)) return `Simulation failed: ${text}.`;
+/** Token (SEP-41 / Stellar Asset Contract) errors worth spelling out. */
+const TOKEN_ERRORS: Record<number, string> = {
+  6: "the account does not exist",
+  8: "the amount is negative",
+  10: "insufficient balance",
+  11: "the balance is not authorized for this asset",
+  13: "the recipient has no trustline for this asset",
+};
+
+/** A failed simulation, with the contract and error code that caused it when known. */
+export class SimulationError extends Error {
+  constructor(
+    readonly raw: string,
+    readonly contract?: string,
+    readonly code?: number,
+    readonly detail?: string,
+  ) {
+    super(SimulationError.describe(raw, contract, code, detail));
   }
-  return `Simulation failed: ${error.split("\n")[0]}`;
+
+  static describe(raw: string, contract?: string, code?: number, detail?: string): string {
+    if (code === undefined) return `Simulation failed: ${raw.split("\n")[0]}`;
+    // The vault's own codes are 1 and 2; a token's codes start higher, so these are safe.
+    const known = TOKEN_ERRORS[code];
+    if (known) return `The token transfer would fail: ${known}.`;
+    return `Contract ${contract} failed with error #${code}${detail ? ` (${detail})` : ""}.`;
+  }
+}
+
+/** The newest diagnostic error event names the contract that failed and why. */
+function simulationError(raw: string): SimulationError {
+  const m = /contract:(C[A-Z2-7]{55}), topics:\[error, Error\(Contract, #(\d+)\)\](?:, data:\["([^"]*)")?/.exec(raw);
+  return m ? new SimulationError(raw, m[1], Number(m[2]), m[3]) : new SimulationError(raw);
 }

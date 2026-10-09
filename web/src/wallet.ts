@@ -8,12 +8,27 @@ import { sep53Hash } from "./message";
  * in-memory keys for tests) can be swapped in for Freighter.
  */
 export interface Signer {
-  /** The account currently selected in the wallet. */
-  activeAddress(): Promise<string>;
+  /**
+   * The account currently selected in the wallet. Throws `NotAllowedError` when this site
+   * isn't connected to that account, unless `requestAccess` is set: then the wallet asks the
+   * user to connect it. Only set it from a user action, since it can open a prompt.
+   */
+  activeAddress(opts?: { requestAccess?: boolean }): Promise<string>;
   /** SEP-53 signature of `message` by `address`; returns the raw 64-byte signature. */
   signMessage(message: string, address: string): Promise<Uint8Array>;
   /** Sign a transaction envelope with `address`; returns the signed XDR. */
   signTransaction(xdr: string, address: string): Promise<string>;
+}
+
+/**
+ * Freighter grants a site access per account. When the user selects an account the site
+ * hasn't been connected to, such as a newly added one, Freighter hides its address until the
+ * user connects it.
+ */
+export class NotAllowedError extends Error {
+  constructor() {
+    super("SoroBunker isn't connected to this Freighter account yet. Freighter will ask you to connect it when you use the account here.");
+  }
 }
 
 /**
@@ -33,13 +48,20 @@ export async function connectFreighter(): Promise<Signer> {
   });
 
   const signer: Signer = {
-    async activeAddress() {
+    async activeAddress(opts) {
       const { networkPassphrase } = await StellarWalletsKit.getNetwork();
       if (networkPassphrase !== NETWORK_PASSPHRASE) {
         throw new Error("Switch Freighter to Testnet.");
       }
-      // Access was granted on connect; don't ask again (the kit's fetchAddress would).
-      return (await StellarWalletsKit.selectedModule.getAddress({ skipRequestAccess: true })).address;
+      try {
+        // Without requestAccess, never prompt: this is polled.
+        const skipRequestAccess = !opts?.requestAccess;
+        return (await StellarWalletsKit.selectedModule.getAddress({ skipRequestAccess })).address;
+      } catch (e) {
+        // The kit's code when Freighter returns no address for the active account.
+        if ((e as { code?: number })?.code === -3) throw new NotAllowedError();
+        throw e;
+      }
     },
     async signMessage(message, address) {
       const { signedMessage, signerAddress } = await StellarWalletsKit.signMessage(message, {

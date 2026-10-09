@@ -3,7 +3,7 @@ import { StrKey } from "@stellar/stellar-sdk";
 import { server } from "./chain";
 import { EXPLORER_CONTRACT, EXPLORER_TX, XLM_SAC } from "./config";
 import { pkHash, transferRotateMessage } from "./message";
-import { addActivity, allKeys, load, save, vaultKeys, type Activity } from "./store";
+import { addActivity, allKeys, clear, load, save, vaultKeys, type Activity } from "./store";
 import {
   balance,
   createVault,
@@ -18,7 +18,7 @@ import {
   type TokenInfo,
   type VaultState,
 } from "./vault";
-import { connectFreighter, freighterAllowed, type Signer } from "./wallet";
+import { connectFreighter, freighterAllowed, NotAllowedError, type Signer } from "./wallet";
 
 /**
  * Everything read about the loaded vault, replaced only as a whole after a successful read,
@@ -36,7 +36,7 @@ interface Loaded {
 
 /** The open sheet (a modal dialog) and its form. A transfer and a rotation share one flow. */
 interface Sheet {
-  kind: "send" | "rotate" | "deposit" | "vaults";
+  kind: "send" | "rotate" | "deposit" | "vaults" | "reset";
   step: "details" | "next" | "review" | "progress";
   to: string;
   amount: string;
@@ -57,11 +57,15 @@ const store = load();
 let signer: Signer | undefined;
 let active: string | undefined;
 let activeError: string | undefined;
+/** The site isn't connected to Freighter's active account, so its address is hidden. */
+let needsAccess = false;
 let loaded: Loaded | undefined;
 let loading = false;
 let busy: string | undefined;
 let sheet: Sheet | undefined;
 let vaultInput = store.vault ?? "";
+/** XLM the fee payer deposits right after creating a vault; blank for none. */
+let createDeposit = "";
 
 const $ = (id: string) => document.getElementById(id)!;
 const sheetEl = $("sheet") as HTMLDialogElement;
@@ -199,6 +203,9 @@ function walletHtml(): string {
   if (!signer) {
     return `<button data-action="connect" id="connect">${busy === "connect" ? `${spinner} Connecting…` : "Connect Freighter"}</button>`;
   }
+  if (needsAccess) {
+    return `<button data-action="connect-account">${busy === "access" ? `${spinner} Connecting…` : `${icon("alert")} Connect this account`}</button>`;
+  }
   if (activeError || !active) {
     return `<span class="chip warn">${icon("alert")} ${esc(activeError ?? "No account selected")}</span>`;
   }
@@ -254,7 +261,11 @@ function openVaultHtml(): string {
         <h4>Create a new vault</h4>
         <p class="muted">In Freighter, add a new account named <code>SoroBunker key 1 (do not fund)</code> and select it. It becomes the vault's first key.</p>
         ${ready ? checkHtml(activeCheck("key")) : notice("info", "Connect Freighter and choose a fee payer first.")}
-        <button class="${ready ? "primary" : ""}" data-action="create-vault">${busy === "create" ? `${spinner} Creating…` : `${icon("plus")} Create vault`}</button>
+        ${ready ? `<label for="create-deposit">Deposit from the fee payer (optional)</label>
+        <div class="amount-field"><input id="create-deposit" data-field="createDeposit" inputmode="decimal" placeholder="0" autocomplete="off" value="${esc(createDeposit)}" /><span>XLM</span></div>` : ""}
+        <button class="${ready ? "primary" : ""}" data-action="create-vault">${
+          busy === "create" ? `${spinner} Creating…` : busy === "fund" ? `${spinner} Depositing…` : `${icon("plus")} Create vault`
+        }</button>
       </div>
       <div class="option">
         <h4>Open an existing vault</h4>
@@ -351,7 +362,7 @@ function ago(t: number): string {
 }
 
 function activityHtml(a: Activity): string {
-  const iconName = { create: "plus", deposit: "deposit", send: "send", rotate: "rotate" }[a.kind];
+  const iconName = { create: "plus", deposit: "deposit", receive: "deposit", send: "send", rotate: "rotate" }[a.kind];
   return `<li>
     <span class="act-icon ${a.kind}">${icon(iconName)}</span>
     <span class="act-text">${esc(a.text)}</span>
@@ -363,13 +374,14 @@ function activityHtml(a: Activity): string {
 // ---- sheets ----------------------------------------------------------------------------
 
 function sheetHtml(s: Sheet): string {
-  const titles = { send: "Send", rotate: "Rotate key", deposit: "Deposit", vaults: "Vaults" };
+  const titles = { send: "Send", rotate: "Rotate key", deposit: "Deposit", vaults: "Vaults", reset: "Reset this browser" };
   const closable = !busy;
   const head = `<div class="sheet-head"><h2 id="sheet-title">${titles[s.kind]}</h2>
     <button class="icon-btn" data-action="close-sheet" aria-label="Close" ${closable ? "" : "hidden"}>${icon("x")}</button></div>`;
   const error = s.error && s.step !== "progress" ? notice("bad", esc(s.error)) : "";
   if (s.kind === "deposit") return head + depositHtml(s) + error;
   if (s.kind === "vaults") return head + vaultsHtml() + error;
+  if (s.kind === "reset") return head + resetHtml() + error;
   return head + stepperHtml(s) + transferStepHtml(s, error);
 }
 
@@ -418,8 +430,8 @@ function transferStepHtml(s: Sheet, error: string): string {
     // Freighter's active account is polled, so the button appears once a usable one is selected.
     const primary = s.nextKey
       ? `<button class="primary" data-action="next-continue">Continue</button>`
-      : check.ok
-        ? `<button class="primary" data-action="use-next">${busy === "next" ? `${spinner} Checking…` : `Use <span class="mono">${short(active!)}</span> as next key`}</button>`
+      : check.ok || needsAccess
+        ? `<button class="primary" data-action="use-next">${busy === "next" ? `${spinner} Checking…` : active ? `Use <span class="mono">${short(active)}</span> as next key` : "Connect and use as next key"}</button>`
         : `<span class="waiting muted small">${spinner} Waiting for a new account in Freighter</span>`;
     return `
       <p class="muted">${s.kind === "rotate" ? "Rotating moves no funds. It" : "Every transfer"} retires key #${n} and commits to a new key. Choose it now:</p>
@@ -523,6 +535,20 @@ function depositHtml(s: Sheet): string {
       <button class="primary" data-action="deposit">${busy === "deposit" ? `${spinner} Depositing…` : "Deposit"}</button></div>`;
 }
 
+function resetHtml(): string {
+  const vaults = Object.keys(store.vaults);
+  const list = vaults.length
+    ? `<p>Vaults and their funds stay on-chain. To use one again, open it by address and select its current key in Freighter. Save the addresses first:</p>
+       <ul class="known">${vaults.map((v) => `<li>${addr(v)}</li>`).join("")}</ul>
+       <p><button class="link" data-copy="${esc(vaults.join("\n"))}">Copy all vault addresses</button></p>`
+    : "";
+  return `
+    <p class="muted">SoroBunker forgets everything it saved in this browser: the fee payer, your vaults, which Freighter account is each vault's current key, and the activity log. Freighter and its accounts aren't touched.</p>
+    ${list}
+    <div class="sheet-foot"><button data-action="close-sheet">Cancel</button>
+      <button class="danger" data-action="reset">Reset</button></div>`;
+}
+
 const vaultsHtml = () =>
   `<p class="muted">Open ${loaded ? "another" : "a"} vault, or create a new one.</p>${openVaultHtml()}`;
 
@@ -548,13 +574,47 @@ async function run(label: string, fn: () => Promise<void>) {
   }
 }
 
-/** Read a vault and token; only replaces what is shown once every read has succeeded. */
-async function refresh(vault: string, token: string) {
+async function read(vault: string, token: string): Promise<Loaded> {
   const state = await vaultState(vault);
   const info = await tokenInfo(token);
   const bal = await balance(token, vault);
   const feePayerXlm = store.feePayer ? await balance(XLM_SAC, store.feePayer).catch(() => undefined) : undefined;
-  loaded = { vault, state, token, info, balance: bal, feePayerXlm };
+  return { vault, state, token, info, balance: bal, feePayerXlm };
+}
+
+/** Read a vault and token; only replaces what is shown once every read has succeeded. */
+async function refresh(vault: string, token: string) {
+  loaded = await read(vault, token);
+}
+
+let polling = false;
+
+/**
+ * Re-read the open vault so funds sent from elsewhere show up without a reload. Skips while
+ * an action runs, and drops its result if an action started or finished meanwhile, since the
+ * action refreshes on its own and its change must not be mistaken for incoming funds.
+ */
+async function pollVault() {
+  const before = loaded;
+  if (!before || busy || polling || document.hidden) return;
+  polling = true;
+  try {
+    const now = await read(before.vault, before.token);
+    if (busy || loaded !== before) return;
+    // With the nonce unchanged, no transfer left the vault, so any increase came in.
+    const received = now.state.nonce === before.state.nonce ? now.balance - before.balance : 0n;
+    if (received > 0n) {
+      const text = `Received ${amountText(received, now.info)}`;
+      addActivity(store, now.vault, { kind: "receive", text });
+      toast(`${esc(text)}.`, "ok");
+    }
+    loaded = now;
+    render();
+  } catch {
+    // A failed read keeps the last balance; the next poll tries again.
+  } finally {
+    polling = false;
+  }
 }
 
 async function connect() {
@@ -568,12 +628,27 @@ async function connect() {
     try {
       const a = await signer.activeAddress();
       activeError = undefined;
+      needsAccess = false;
       active = a;
     } catch (e) {
       activeError = errorText(e);
+      needsAccess = e instanceof NotAllowedError;
+      // The active account is unknown now, so stop showing the previous one.
+      if (needsAccess) active = undefined;
     }
     render();
   }, 1500);
+}
+
+/**
+ * Ask Freighter to connect its active account when the site can't see it yet. This opens
+ * Freighter's prompt, so call it only from a user action.
+ */
+async function ensureAccess() {
+  if (!signer || !needsAccess) return;
+  active = await signer.activeAddress({ requestAccess: true });
+  activeError = undefined;
+  needsAccess = false;
 }
 
 async function openVault(v: string) {
@@ -587,6 +662,7 @@ async function openVault(v: string) {
 }
 
 async function useFeePayer() {
+  await ensureAccess();
   const c = activeCheck("fee payer");
   if (!c.ok) throw new Error(c.text.replace(/<[^>]+>/g, ""));
   // Vault keys are never funded, so this also keeps a fresh key from becoming the fee payer.
@@ -601,20 +677,44 @@ async function useFeePayer() {
 async function create() {
   if (!signer) throw new Error("Connect Freighter first.");
   if (!store.feePayer) throw new Error("Choose a fee payer first.");
+  await ensureAccess();
   const c = activeCheck("key");
   if (!c.ok) throw new Error(c.text.replace(/<[^>]+>/g, ""));
   const firstKey = active!;
+  // Check the amount before creating anything, so a typo doesn't leave an empty vault.
+  const xlm = await tokenInfo(XLM_SAC);
+  const amount = createDeposit.trim() ? parseAmount(createDeposit, xlm.decimals) : 0n;
   const { hash, vault } = await createVault(signer, store.feePayer, firstKey);
   vaultKeys(store, vault).currentKey = firstKey;
   store.vault = vault;
   vaultInput = vault;
   addActivity(store, vault, { kind: "create", text: `Created the vault with key #1`, hash });
   sheet = undefined;
+  // The vault exists now, so a failed deposit is reported but doesn't undo it.
+  let depositError: string | undefined;
+  if (amount > 0n) {
+    busy = "fund";
+    render();
+    try {
+      const dep = await deposit(signer, store.feePayer, vault, XLM_SAC, amount);
+      addActivity(store, vault, { kind: "deposit", text: `Deposited ${amountText(amount, xlm)}`, hash: dep.hash });
+    } catch (e) {
+      depositError = errorText(e);
+    }
+  }
+  createDeposit = "";
   await refresh(vault, XLM_SAC);
-  toast("Vault created. Deposit some XLM to get started.", "ok");
+  if (depositError) {
+    toast(`Vault created, but the deposit failed: ${esc(depositError)} Try again with Deposit.`, "bad");
+  } else if (amount > 0n) {
+    toast(`Vault created with ${esc(amountText(amount, xlm))}.`, "ok");
+  } else {
+    toast("Vault created. Deposit some XLM to get started.", "ok");
+  }
 }
 
-function recover() {
+async function recover() {
+  await ensureAccess();
   if (!active || !loaded) throw new Error("Select the vault's current key in Freighter.");
   if (!pkHash(active).equals(loaded.state.pkHash)) {
     throw new Error(`${short(active)} is not this vault's current key: its hash doesn't match.`);
@@ -659,6 +759,7 @@ function detailsError(s: Sheet): string | undefined {
 }
 
 async function useNext(s: Sheet) {
+  await ensureAccess();
   const c = activeCheck("key");
   if (!c.ok) throw new Error(c.text.replace(/<[^>]+>/g, ""));
   const key = active!;
@@ -712,7 +813,8 @@ const actions: Record<string, (arg?: string) => void> = {
   "use-fee-payer": () => run("fee", useFeePayer),
   "create-vault": () => run("create", create),
   "open-vault": (arg) => run("open", () => openVault(arg ?? vaultInput)),
-  recover: () => run("recover", async () => recover()),
+  recover: () => run("recover", recover),
+  "connect-account": () => run("access", ensureAccess),
   "open-send": () => run("sheet", async () => openTransfer("send")),
   "open-deposit": () =>
     run("sheet", async () => {
@@ -728,6 +830,17 @@ const actions: Record<string, (arg?: string) => void> = {
     vaultInput = "";
     sheet = { kind: "vaults", step: "details", to: "", amount: "", token: XLM_SAC };
     render();
+  },
+  "open-reset": () => {
+    if (busy) return;
+    sheet = { kind: "reset", step: "details", to: "", amount: "", token: XLM_SAC };
+    render();
+  },
+  reset: () => {
+    busy = "reset"; // so a poll in flight doesn't save again before the reload
+    clear();
+    // A reload drops the in-memory state too. Freighter still allows the site, so it reconnects.
+    location.reload();
   },
   "close-sheet": () => {
     if (busy) return;
@@ -802,6 +915,7 @@ document.addEventListener("input", (e) => {
   const field = el.dataset.field;
   if (!field) return;
   if (field === "vaultInput") vaultInput = el.value;
+  else if (field === "createDeposit") createDeposit = el.value;
   else if (sheet) (sheet as unknown as Record<string, string>)[field] = el.value;
   if (sheet) sheet.error = undefined;
   render();
@@ -839,6 +953,8 @@ render();
     loading = false;
     render();
   }
+  setInterval(pollVault, 10_000);
+  document.addEventListener("visibilitychange", pollVault);
   // Reconnect without a prompt if Freighter already allows this site.
   if ((await freighterAllowed()) && !signer) await run("connect", connect);
 })();

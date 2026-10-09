@@ -292,6 +292,13 @@ button.primary {
   font-weight: 600;
 }
 
+button.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: var(--card);
+  font-weight: 600;
+}
+
 button.primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
@@ -715,7 +722,8 @@ label,
   color: var(--muted);
 }
 
-.act-icon.deposit {
+.act-icon.deposit,
+.act-icon.receive {
   background: var(--ok-soft);
   color: var(--ok);
 }

@@ -8,7 +8,8 @@
 //   await new (Object.getPrototypeOf(async function () {}).constructor)(src)();
 //
 // Controls on window.__ff:
-//   add(name)              new account, made active (like adding one in Freighter)
+//   add(name)              new account, made active (like adding one in Freighter); the
+//                          site isn't allowed to see it until it requests access again
 //   select(name|address)   make an account active
 //   fund(name)             fund an account with friendbot
 //   list()                 accounts, * marks the active one
@@ -24,11 +25,13 @@ const REQ = "FREIGHTER_EXTERNAL_MSG_REQUEST";
 const RES = "FREIGHTER_EXTERNAL_MSG_RESPONSE";
 const STORE = "__fakeFreighter";
 
-const saved = JSON.parse(localStorage.getItem(STORE) || "null") || { accounts: [], active: -1, allowed: false };
+const saved = JSON.parse(localStorage.getItem(STORE) || "null") || { accounts: [], active: -1, allowed: [] };
+const accounts = saved.accounts.map((a) => ({ name: a.name, kp: Keypair.fromSecret(a.secret) }));
 const ff = (window.__ff = {
-  accounts: saved.accounts.map((a) => ({ name: a.name, kp: Keypair.fromSecret(a.secret) })),
+  accounts,
   active: saved.active,
-  allowed: saved.allowed,
+  // Like Freighter, access is granted per account. Older saves kept one flag for all accounts.
+  allowed: Array.isArray(saved.allowed) ? saved.allowed : saved.allowed ? accounts.map((a) => a.kp.publicKey()) : [],
   network: "TESTNET",
   // One-shot rejection: "access" | "message" | "tx"
   rejectNext: null,
@@ -59,6 +62,9 @@ const ff = (window.__ff = {
   },
   address(i = this.active) {
     return this.accounts[i]?.kp.publicKey() ?? "";
+  },
+  isAllowed() {
+    return this.allowed.includes(this.address());
   },
   byAddress(addr) {
     return this.accounts.find((a) => a.kp.publicKey() === addr);
@@ -101,7 +107,7 @@ window.addEventListener("message", async (event) => {
     case "REQUEST_CONNECTION_STATUS":
       return reply(id, { isConnected: true });
     case "REQUEST_ALLOWED_STATUS":
-      return reply(id, { isAllowed: ff.allowed });
+      return reply(id, { isAllowed: ff.isAllowed() });
     case "SET_ALLOWED_STATUS":
     case "REQUEST_ACCESS":
       if (ff.rejectNext === "access") {
@@ -109,11 +115,11 @@ window.addEventListener("message", async (event) => {
         ff.requests.push({ type, rejected: true });
         return reply(id, rejected);
       }
-      ff.allowed = true;
+      if (!ff.isAllowed()) ff.allowed.push(ff.address());
       ff.save();
       return reply(id, { publicKey: ff.address(), isAllowed: true });
     case "REQUEST_PUBLIC_KEY":
-      return reply(id, { publicKey: ff.allowed ? ff.address() : "" });
+      return reply(id, { publicKey: ff.isAllowed() ? ff.address() : "" });
     case "REQUEST_NETWORK":
     case "REQUEST_NETWORK_DETAILS":
       return reply(id, {

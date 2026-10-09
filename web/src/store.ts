@@ -16,7 +16,7 @@ export interface VaultRecord {
 }
 
 export interface Activity {
-  kind: "create" | "deposit" | "send" | "rotate";
+  kind: "create" | "deposit" | "receive" | "send" | "rotate";
   text: string;
   time: number;
   hash?: string;
@@ -39,6 +39,15 @@ export function save(s: Store) {
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     // Not persisted; the app still works for this session.
+  }
+}
+
+/** Forget everything saved in this browser. */
+export function clear() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // Nothing was persisted.
   }
 }
 

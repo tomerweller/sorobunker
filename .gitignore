@@ -1,0 +1,6 @@
+/target
+**/test_snapshots
+web/node_modules
+web/dist
+.claude/
+.DS_Store

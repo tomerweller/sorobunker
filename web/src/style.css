@@ -1,0 +1,192 @@
+:root {
+  --bg: #f6f5f2;
+  --card: #ffffff;
+  --text: #1c1b19;
+  --muted: #6b675f;
+  --border: #e2dfd8;
+  --accent: #1d4ed8;
+  --accent-text: #ffffff;
+  --ok: #15803d;
+  --bad: #b91c1c;
+  --code: #f1efea;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141412;
+    --card: #1d1c1a;
+    --text: #ecebe7;
+    --muted: #a19d94;
+    --border: #34322e;
+    --accent: #6d9bff;
+    --accent-text: #0b1220;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --code: #262522;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+h3 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.sub,
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sub {
+  margin: 4px 0 20px;
+}
+
+section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 12px 0;
+}
+
+dt {
+  color: var(--muted);
+}
+
+dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.row input {
+  flex: 1;
+  min-width: 0;
+}
+
+label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+label input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+
+input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+pre {
+  margin: 0 0 12px;
+  padding: 12px;
+  background: var(--code);
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+
+#log:empty::before {
+  content: "Nothing yet.";
+  color: var(--muted);
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.bad {
+  color: var(--bad);
+}
+
+ol {
+  padding-left: 20px;
+  margin: 0 0 12px;
+}
+
+a {
+  color: var(--accent);
+}

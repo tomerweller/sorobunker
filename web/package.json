@@ -1,0 +1,26 @@
+{
+  "name": "sorobunker-web",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "e2e": "tsx scripts/e2e.ts"
+  },
+  "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "2.7.1",
+    "@stellar/stellar-sdk": "^17.2.1",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  }
+}

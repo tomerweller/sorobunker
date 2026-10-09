@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Installs the toolchain and wasm target pinned in rust-toolchain.toml.
+      - run: rustup show
+      # soroban-sdk only builds contracts through the stellar CLI.
+      - uses: stellar/stellar-cli@v27.1.0
+      - name: Build contract wasm
+        run: stellar contract build
+      - name: Test (including the wasm budget test)
+        run: cargo test
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

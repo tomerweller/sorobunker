@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SoroBunker</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>SoroBunker</h1>
+        <p class="sub">
+          A vault guarded by a hidden, rotating key · Testnet ·
+          <a href="https://github.com/tomerweller/sorobunker" target="_blank" rel="noopener">Source</a>
+        </p>
+      </header>
+
+      <section>
+        <h2>Wallet</h2>
+        <button id="connect">Connect Freighter</button>
+        <dl>
+          <dt>Active account</dt>
+          <dd id="active" class="mono">not connected</dd>
+          <dt>Fee payer</dt>
+          <dd><span id="fee-payer" class="mono">not set</span></dd>
+        </dl>
+        <button id="set-fee-payer" disabled>Use active account as fee payer</button>
+        <p class="hint">
+          The fee payer is an ordinary funded account. It submits and pays for transactions
+          but cannot move vault funds. It must never be used as a vault key.
+        </p>
+      </section>
+
+      <section>
+        <h2>Vault</h2>
+        <div class="row">
+          <input id="vault" class="mono" placeholder="Vault contract address (C…)" spellcheck="false" />
+          <button id="load">Load</button>
+        </div>
+        <button id="create" disabled>Create a new vault with the active account as its first key</button>
+        <dl id="vault-info" hidden>
+          <dt>Nonce</dt>
+          <dd id="nonce"></dd>
+          <dt>Stored key hash</dt>
+          <dd id="pk-hash" class="mono"></dd>
+          <dt>Balance</dt>
+          <dd id="balance"></dd>
+          <dt>Current key</dt>
+          <dd><span id="current-key" class="mono"></span> <span id="current-status"></span></dd>
+        </dl>
+        <button id="set-current" disabled hidden>Use active account as current key</button>
+      </section>
+
+      <section>
+        <h2>Deposit</h2>
+        <div class="row">
+          <input id="deposit-amount" placeholder="Amount" inputmode="decimal" />
+          <button id="deposit" disabled>Deposit from fee payer</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Transfer</h2>
+        <label>Token<input id="token" class="mono" spellcheck="false" /></label>
+        <label>To<input id="to" class="mono" placeholder="G… or C…" spellcheck="false" /></label>
+        <label>Amount<input id="amount" placeholder="0 rotates the key only" inputmode="decimal" /></label>
+
+        <h3>Next key</h3>
+        <ol class="hint">
+          <li>In Freighter, add a new account. Name it something like <em>SoroBunker key 2 — do not fund</em>.</li>
+          <li>Keep it selected, then click the button below.</li>
+          <li>Never fund this account or share its address. Only its hash goes on-chain.</li>
+        </ol>
+        <button id="set-next" disabled>Use active account as next key</button>
+        <dl>
+          <dt>Next key</dt>
+          <dd id="next-key" class="mono">not set</dd>
+        </dl>
+
+        <h3>Message the current key will sign</h3>
+        <pre id="message" class="mono">Load a vault and fill in the transfer.</pre>
+        <button id="send" class="primary" disabled>Sign and send</button>
+      </section>
+
+      <section>
+        <h2>Log</h2>
+        <pre id="log" class="mono"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

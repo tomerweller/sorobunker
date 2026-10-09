@@ -55,14 +55,17 @@ It keeps three kinds of account apart:
 
 To use it, set Freighter to **Testnet**, then:
 
-1. **Connect** Freighter, select a funded account and click *Use active account as fee payer*.
-2. **Create a vault:** add a new account in Freighter (name it e.g. *SoroBunker key 1 — do
-   not fund*), select it and click *Create a new vault*.
+1. **Connect** Freighter, select a funded account and make it the fee payer.
+2. **Create a vault:** add a new account in Freighter (name it e.g. *SoroBunker key 1 — do not
+   fund*), select it and click *Create vault*.
 3. **Deposit** some XLM from the fee payer.
-4. **Transfer:** add another new account in Freighter, select it and click *Use active
-   account as next key*. Fill in the recipient and amount, check the message, and click
-   *Sign and send*. Freighter asks the current key to sign the message, then the fee payer to
-   sign the transaction.
+4. **Send:** enter the recipient and amount. When asked for the next key, add another new
+   account in Freighter and select it; the app checks it and offers to use it. Review the
+   message, then click *Sign with key #n*. Freighter asks the current key to sign the message,
+   then the fee payer to sign the transaction.
+
+The dashboard shows the vault's balance, which account holds each role (fee payer, current
+key, next key), the chain of revealed keys, and what this browser has done with the vault.
 
 Before submitting, the app verifies the wallet's signature locally and simulates the call,
 so a bad signature or a failing transfer is caught before the key is revealed on-chain.
@@ -70,7 +73,7 @@ so a bad signature or a failing transfer is caught before the key is revealed on
 Freighter cannot create accounts for an app, so each new key is added by hand, one per
 transfer. They are all derived from your Freighter recovery phrase. The app remembers which
 account is each vault's current key in this browser; if that is lost, select the right
-account in Freighter and click *Use active account as current key* (the app checks its hash).
+account in Freighter and use it as the current key from the dashboard (the app checks its hash).
 
 > [!IMPORTANT]
 > Never fund or share a vault key's address. In Stellar, an account address *is* its public

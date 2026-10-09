@@ -54,11 +54,12 @@ export async function prepare(source: string, op: xdr.Operation): Promise<Transa
   return rpc.assembleTransaction(tx, sim).build();
 }
 
-/** Sign with `source`, submit, and wait for the result. */
+/** Sign with `source`, submit, and wait for the result; `onSent` runs once it is broadcast. */
 export async function signAndSubmit(
   signer: Signer,
   source: string,
   tx: Transaction,
+  onSent: () => void = () => {},
 ): Promise<{ hash: string; returnValue?: xdr.ScVal }> {
   const signed = TransactionBuilder.fromXDR(
     await signer.signTransaction(tx.toXDR(), source),
@@ -73,6 +74,7 @@ export async function signAndSubmit(
   if (sent.status === "ERROR") {
     throw new Error(`Submission rejected (${sent.errorResult?.result.type ?? "unknown error"}).`);
   }
+  onSent();
   const res = await server.pollTransaction(sent.hash, { attempts: 30 });
   if (res.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
     throw new Error(`Transaction ${sent.hash} failed (${res.status}).`);

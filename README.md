@@ -1,6 +1,6 @@
 # SoroBunker
 
-A minimal vault for Stellar that uses one-time keys to stay quantum-resistant at rest.
+A minimal vault for Stellar that uses hashed one-time keys to stay quantum-resistant at rest.
 
 Live demo on testnet: https://tomerweller.com/sorobunker/
 

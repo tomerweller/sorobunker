@@ -4,90 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SoroBunker</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c2410c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='3'/%3E%3Ccircle cx='12' cy='12' r='3.5'/%3E%3Cpath d='M12 8.5V7M12 17v-1.5M15.5 12H17M7 12h1.5'/%3E%3C/svg%3E" />
   </head>
   <body>
-    <main>
-      <header>
-        <h1>SoroBunker</h1>
-        <p class="sub">
-          A vault guarded by a hidden, rotating key · Testnet ·
-          <a href="https://github.com/tomerweller/sorobunker" target="_blank" rel="noopener">Source</a>
-        </p>
-      </header>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="./">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="3" />
+            <circle cx="12" cy="12" r="3.5" />
+            <path d="M12 8.5V7M12 17v-1.5M15.5 12H17M7 12h1.5" />
+          </svg>
+          SoroBunker
+        </a>
+        <span class="badge warn">Testnet</span>
+        <div id="wallet" class="wallet"></div>
+      </div>
+    </header>
 
-      <section>
-        <h2>Wallet</h2>
-        <button id="connect">Connect Freighter</button>
-        <dl>
-          <dt>Active account</dt>
-          <dd id="active" class="mono">not connected</dd>
-          <dt>Fee payer</dt>
-          <dd><span id="fee-payer" class="mono">not set</span></dd>
-        </dl>
-        <button id="set-fee-payer" disabled>Use active account as fee payer</button>
-        <p class="hint">
-          The fee payer is an ordinary funded account. It submits and pays for transactions
-          but cannot move vault funds. It must never be used as a vault key.
-        </p>
-      </section>
+    <main id="main"></main>
 
-      <section>
-        <h2>Vault</h2>
-        <div class="row">
-          <input id="vault" class="mono" placeholder="Vault contract address (C…)" spellcheck="false" />
-          <button id="load">Load</button>
-        </div>
-        <button id="create" disabled>Create a new vault with the active account as its first key</button>
-        <dl id="vault-info" hidden>
-          <dt>Nonce</dt>
-          <dd id="nonce"></dd>
-          <dt>Stored key hash</dt>
-          <dd id="pk-hash" class="mono"></dd>
-          <dt>Balance</dt>
-          <dd id="balance"></dd>
-          <dt>Current key</dt>
-          <dd><span id="current-key" class="mono"></span> <span id="current-status"></span></dd>
-        </dl>
-        <button id="set-current" disabled hidden>Use active account as current key</button>
-      </section>
+    <footer class="footer">
+      A vault guarded by a hidden, rotating key. Experimental and unaudited.
+      <a href="https://github.com/tomerweller/sorobunker" target="_blank" rel="noopener">Source</a>
+    </footer>
 
-      <section>
-        <h2>Deposit</h2>
-        <div class="row">
-          <input id="deposit-amount" placeholder="Amount" inputmode="decimal" />
-          <button id="deposit" disabled>Deposit from fee payer</button>
-        </div>
-      </section>
+    <dialog id="sheet" class="sheet" aria-labelledby="sheet-title"></dialog>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
 
-      <section>
-        <h2>Transfer</h2>
-        <label>Token<input id="token" class="mono" spellcheck="false" /></label>
-        <label>To<input id="to" class="mono" placeholder="G… or C…" spellcheck="false" /></label>
-        <label>Amount<input id="amount" placeholder="0 rotates the key only" inputmode="decimal" /></label>
-
-        <h3>Next key</h3>
-        <ol class="hint">
-          <li>In Freighter, add a new account. Name it something like <em id="next-name">SoroBunker key 2 — do not fund</em>.</li>
-          <li>Keep it selected, then click the button below.</li>
-          <li>Never fund this account or share its address. Only its hash goes on-chain.</li>
-        </ol>
-        <button id="set-next" disabled>Use active account as next key</button>
-        <dl>
-          <dt>Next key</dt>
-          <dd id="next-key" class="mono">not set</dd>
-        </dl>
-
-        <h3>Message the current key will sign</h3>
-        <pre id="message" class="mono"></pre>
-        <p id="amount-note" class="hint"></p>
-        <button id="send" class="primary" disabled>Sign and send</button>
-      </section>
-
-      <section>
-        <h2>Log</h2>
-        <pre id="log" class="mono"></pre>
-      </section>
-    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

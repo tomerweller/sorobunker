@@ -79,7 +79,12 @@ export interface TransferParams {
   amount: bigint;
 }
 
-export type Step = (text: string) => void;
+/**
+ * Where a transfer has got to: the current key signs the message, the signature is checked and
+ * the call simulated, the fee payer signs, then the transaction is submitted and awaited.
+ */
+export type Stage = "sign" | "simulate" | "submit" | "confirm";
+export type Step = (stage: Stage) => void;
 
 /**
  * The full transfer: the current key signs the readable message, the signature is
@@ -108,13 +113,13 @@ export async function transferRotate(signer: Signer, p: TransferParams, step: St
     amount: p.amount,
     nextPkHash: pkHash(p.nextKey),
   });
-  step(`Waiting for the current key to sign:\n${message}`);
+  step("sign");
   const sig = await signer.signMessage(message, p.currentKey);
   if (!verifyMessage(p.currentKey, message, sig)) {
     throw new Error("The wallet's signature does not verify; nothing was sent.");
   }
 
-  step("Signature verified locally. Simulating the transfer…");
+  step("simulate");
   const op = invoke(
     p.vault,
     "transfer_rotate",
@@ -133,8 +138,8 @@ export async function transferRotate(signer: Signer, p: TransferParams, step: St
     throw e;
   });
 
-  step("Simulation passed. Waiting for the fee payer to sign the transaction…");
-  return signAndSubmit(signer, p.feePayer, tx);
+  step("submit");
+  return signAndSubmit(signer, p.feePayer, tx, () => step("confirm"));
 }
 
 /** The three keys must stay separate, and funds must never go to an unexposed key. */

@@ -5,7 +5,21 @@
 export interface Store {
   feePayer?: string;
   vault?: string;
-  vaults: Record<string, { currentKey?: string; usedKeys: string[] }>;
+  vaults: Record<string, VaultRecord>;
+}
+
+export interface VaultRecord {
+  currentKey?: string;
+  usedKeys: string[];
+  /** What this browser did with the vault, newest first. */
+  activity?: Activity[];
+}
+
+export interface Activity {
+  kind: "create" | "deposit" | "send" | "rotate";
+  text: string;
+  time: number;
+  hash?: string;
 }
 
 const KEY = "sorobunker";
@@ -28,8 +42,14 @@ export function save(s: Store) {
   }
 }
 
-export function vaultKeys(s: Store, vault: string) {
+export function vaultKeys(s: Store, vault: string): VaultRecord {
   return (s.vaults[vault] ??= { usedKeys: [] });
+}
+
+export function addActivity(s: Store, vault: string, a: Omit<Activity, "time">) {
+  const v = vaultKeys(s, vault);
+  v.activity = [{ ...a, time: Date.now() }, ...(v.activity ?? [])].slice(0, 50);
+  save(s);
 }
 
 /** Every vault key this browser has seen, for any vault. */

@@ -252,7 +252,7 @@ function openVaultHtml(): string {
     <div class="split">
       <div class="option">
         <h4>Create a new vault</h4>
-        <p class="muted">In Freighter, add a new account named <code>SoroBunker key 1 — do not fund</code> and select it. It becomes the vault's first key.</p>
+        <p class="muted">In Freighter, add a new account named <code>SoroBunker key 1 (do not fund)</code> and select it. It becomes the vault's first key.</p>
         ${ready ? checkHtml(activeCheck("key")) : notice("info", "Connect Freighter and choose a fee payer first.")}
         <button class="${ready ? "primary" : ""}" data-action="create-vault">${busy === "create" ? `${spinner} Creating…` : `${icon("plus")} Create vault`}</button>
       </div>
@@ -293,7 +293,7 @@ function dashboardHtml(): string {
     </div>`;
 
   const next = pendingNextKey();
-  const revealed = state.nonce === 0n ? "" : state.nonce === 1n ? "#1" : `#1–#${state.nonce}`;
+  const revealed = state.nonce === 0n ? "" : state.nonce === 1n ? "#1" : `#1 to #${state.nonce}`;
   const activity = vaultKeys(store, vault).activity ?? [];
 
   return `
@@ -407,7 +407,7 @@ function transferStepHtml(s: Sheet, error: string): string {
   }
 
   if (s.step === "next") {
-    const name = `SoroBunker key ${n + 1n} — do not fund`;
+    const name = `SoroBunker key ${n + 1n} (do not fund)`;
     const check = activeCheck("key");
     const chosen = s.nextKey
       ? notice("ok", `Key #${n + 1n} is <span class="mono">${short(s.nextKey)}</span>. Only its hash will go on-chain.`)

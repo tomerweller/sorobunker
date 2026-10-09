@@ -209,13 +209,17 @@ button("set-fee-payer").onclick = () => {
 const loadVault = () =>
   run("Load vault", async () => {
     const v = input("vault").value.trim();
-    if (!StrKey.isValidContract(v)) throw new Error("Enter a vault contract address (C…).");
-    if (v !== loaded?.vault) {
-      loaded = undefined;
-      nextKey = undefined;
-      render();
+    const previous = loaded?.vault;
+    try {
+      if (!StrKey.isValidContract(v)) throw new Error("Enter a vault contract address (C…).");
+      // refresh() only replaces what is shown once every read succeeded.
+      await refresh(v, input("token").value.trim());
+    } catch (e) {
+      // Keep the field in step with the vault still shown.
+      if (previous) input("vault").value = previous;
+      throw e;
     }
-    await refresh(v, input("token").value.trim());
+    if (v !== previous) nextKey = undefined;
     store.vault = v;
     save(store);
     log(`Loaded vault ${v}`, { href: EXPLORER_CONTRACT + v, label: "explorer" });

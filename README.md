@@ -1,7 +1,6 @@
 # SoroBunker
 
-A minimal vault for [Soroban](https://developers.stellar.org/docs/build/smart-contracts/overview)
-(Stellar smart contracts) that keeps its key hidden until it is used, then replaces it.
+A minimal vault for Stellar that uses one-time keys to stay quantum-resistant at rest.
 
 Live demo on testnet: https://tomerweller.com/sorobunker/
 
@@ -10,16 +9,14 @@ Live demo on testnet: https://tomerweller.com/sorobunker/
 
 ## How it works
 
-- The vault stores only `sha256(ed25519 public key)`, never the key itself.
+- The vault stores only `sha256(ed25519 public key)`, never the public key itself.
 - To transfer, the key holder signs a human-readable message describing the transfer and
   reveals the public key. The contract checks the key against the stored hash and verifies
   the signature.
 - Every transfer also commits to the hash of the next key, so each key is revealed and
-  used exactly once. The vault records every key it has revealed and refuses to rotate back
-  to one.
+  used exactly once.
 - Anyone can submit a signed transfer and pay its fees; they cannot change the recipient,
-  amount, token or next key, which are all signed. The contract does not use the Stellar
-  auth framework.
+  amount, token or next key, which are all signed.
 
 ### Security model: quantum-resistant at rest
 
@@ -29,9 +26,7 @@ vault that sits idle from a future attacker who can break elliptic-curve keys.
 
 It is not fully post-quantum: once a transfer is broadcast, its public key is exposed
 until the transaction lands and the key rotates. An attacker who could derive the secret key
-within that window (about one ledger) could sign a different transfer. See
-[Operational rules](#operational-rules). Hash-based one-time signatures such as Lamport
-would close that window, at the cost of 16 KiB signatures and about 5x the fees.
+within that window (about one ledger) could sign a different transfer.
 
 ## Repository layout
 
@@ -43,9 +38,7 @@ would close that window, at the cost of 16 KiB signatures and about 5x the fees.
 
 ## Web app
 
-The web app runs on testnet and uses Freighter (through
-[Stellar Wallets Kit](https://github.com/Creit-Tech/Stellar-Wallets-Kit)) for every key.
-It keeps three kinds of account apart:
+The web app runs on testnet and uses Freighter for every key. It keeps three kinds of account apart:
 
 | Role | What it does | Account |
 |---|---|---|
@@ -177,19 +170,6 @@ npm run e2e              # full flow on testnet, with in-memory keys in place of
 page, it answers Freighter's message protocol with real testnet keys, logs what the app asks
 the wallet to sign, and can simulate declines, a wrong network or a misbehaving wallet. See
 the comment at the top of the file for how to inject and drive it.
-
-A transfer costs about 1.3M CPU instructions and about 0.002 XLM in fees on testnet.
-
-## Operational rules
-
-1. Simulate before submitting. A failed transaction still publishes the public key
-   without rotating it. If that happens, rotate right away with a zero-amount transfer.
-2. A broadcast transaction exposes its public key until it lands; one that is delayed or
-   censored stays exposed for longer.
-3. The fee payer is a classic ed25519 account. It cannot move vault funds, but a quantum
-   attacker could censor its transactions.
-4. Each transfer extends the vault's storage lifetime. Call `extend_ttl` occasionally if
-   the vault sits idle for months.
 
 ## License
 

@@ -228,7 +228,7 @@ function setupHtml(): string {
 
   return `
     <section class="intro">
-      <h1>Keep funds behind a key nobody has seen</h1>
+      <h1>A vault with one-time keys</h1>
       <p>A SoroBunker vault stores only the hash of its key. Each transfer reveals that key once, then replaces it with a new hidden one.</p>
     </section>
     <ol class="setup card">
